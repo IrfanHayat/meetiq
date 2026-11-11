@@ -3,7 +3,7 @@ import { ActionItem, Segment } from './models';
 
 const GROQ_BASE = 'https://api.groq.com/openai/v1';
 const WHISPER_MODEL = 'whisper-large-v3-turbo';
-const CHAT_MODEL = 'llama-3.1-8b-instant';
+const CHAT_MODEL = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b';
 
 export interface TranscriptResult {
   text: string;
@@ -166,8 +166,10 @@ export async function summarizeTranscript(transcript: string, language: string):
     '/chat/completions',
     {
       model: CHAT_MODEL,
+      reasoning_effort: 'low',
+      include_reasoning: false,
       temperature: 0.2,
-      max_tokens: 900,
+      max_tokens: 2000,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -216,12 +218,14 @@ export async function answerFromTranscript(transcript: string, title: string, hi
     '/chat/completions',
     {
       model: CHAT_MODEL,
+      reasoning_effort: 'low',
+      include_reasoning: false,
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 1200,
       messages: [
         {
           role: 'system',
-          content: `You are MeetIQ. Answer questions using only the voice note below. If the note does not contain the answer, say you cannot find it in this note. Be concise and specific. Do not invent owners, dates, or decisions.\n\nTitle: ${title}\n\nTranscript:\n${clipped}`,
+          content: `You are MeetIQ. Answer questions using only the voice note below. If the note does not contain the answer, say you cannot find it in this note. Be concise and specific; keep answers under 100 words. Do not invent owners, dates, or decisions.\n\nTitle: ${title}\n\nTranscript:\n${clipped}`,
         },
         ...prior,
         { role: 'user', content: question.slice(0, 2000) },
