@@ -76,7 +76,7 @@ export function HelpScreen({ navigation }: NativeStackScreenProps<RootStackParam
         <Text style={styles.p}>Open a note, switch to Chat, and ask about decisions, owners, or a recap. Answers stay inside that transcript.</Text>
         <Text style={styles.h}>Minutes</Text>
         <Text style={styles.p}>Free includes 100 minutes total, plus 10 minutes each time a reward ad finishes. Premium includes 1,200 minutes every month. If the server is asleep, wait a few seconds and tap retry.</Text>
-        <Text style={styles.p}>MeetIQ 1.1.1</Text>
+        <Text style={styles.p}>MeetIQ 1.1.2</Text>
       </ScrollView>
     </Page>
   );

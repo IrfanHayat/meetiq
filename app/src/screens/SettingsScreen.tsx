@@ -85,7 +85,7 @@ export function SettingsScreen({ navigation }: NativeStackScreenProps<RootStackP
           <Row icon="info" label="Help & about" onPress={() => navigation.navigate('Help')} />
         </View>
         {offline ? <Pressable onPress={() => void retryConnection()}><Text style={styles.retry}>Retry connection</Text></Pressable> : null}
-        <Text style={styles.ver}>MeetIQ 1.1.1 · Device-ID account</Text>
+        <Text style={styles.ver}>MeetIQ 1.1.2 · Device-ID account</Text>
       </ScrollView>
     </SafeAreaView>
   );
