@@ -2,12 +2,14 @@ import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HomeBanner, NativeListAd } from '../components/AdSlots';
 import { OfflineBanner } from '../components/Ui';
 import { formatDurationBadge, greeting, relativeDay } from '../format';
 import { useImport } from '../hooks/useImport';
+import { api } from '../services/api';
+import { explainError } from '../services/feedback';
 import { useApp } from '../state/AppState';
 import { colors, folderVisual, fonts } from '../theme';
 import { NoteSummary, RootStackParamList } from '../types';
@@ -24,6 +26,8 @@ export function HomeScreen({ navigation, route }: NativeStackScreenProps<RootSta
     setChip(route.params.folderId ? String(route.params.folderId) : 'none');
   }, [route.params?.folderId]);
   const [refreshing, setRefreshing] = useState(false);
+  const [ytOpen, setYtOpen] = useState(false);
+  const [ytUrl, setYtUrl] = useState('');
   const showAds = Boolean(user && !user.isPremium);
 
   const folderName = (id: string | null) => {
@@ -79,6 +83,13 @@ export function HomeScreen({ navigation, route }: NativeStackScreenProps<RootSta
           placeholderTextColor={colors.ink3}
           style={styles.searchInput}
         />
+      </View>
+      <View style={styles.tools}>
+        <Pressable style={styles.tool} onPress={() => setYtOpen(true)}><Text style={styles.toolText}>YouTube</Text></Pressable>
+        <Pressable style={styles.tool} onPress={() => navigation.navigate('GeneralChat')}><Text style={styles.toolText}>AI chat</Text></Pressable>
+        <Pressable style={styles.tool} onPress={() => navigation.navigate('Memory')}><Text style={styles.toolText}>Memory</Text></Pressable>
+        <Pressable style={styles.tool} onPress={() => navigation.navigate('Insights')}><Text style={styles.toolText}>Insights</Text></Pressable>
+        <Pressable style={styles.tool} onPress={() => navigation.navigate('Decisions')}><Text style={styles.toolText}>Decisions</Text></Pressable>
       </View>
       <View style={styles.chips}>
         <Chip label="All" active={chip === 'all'} onPress={() => setChip('all')} />
@@ -137,6 +148,23 @@ export function HomeScreen({ navigation, route }: NativeStackScreenProps<RootSta
           </Pressable>
         </View>
       </View>
+    <Modal visible={ytOpen} transparent animationType="fade" onRequestClose={() => setYtOpen(false)}>
+        <View style={styles.modal}>
+          <View style={styles.modalCard}>
+            <Text style={styles.emptyTitle}>YouTube link</Text>
+            <TextInput value={ytUrl} onChangeText={setYtUrl} placeholder="https://youtu.be/…" placeholderTextColor={colors.ink3} style={styles.ytInput} autoCapitalize="none" />
+            <Pressable style={styles.ytBtn} onPress={() => {
+              const url = ytUrl.trim();
+              if (!url) return;
+              setYtOpen(false);
+              void api.youtube(url, chip !== 'all' && chip !== 'none' ? chip : null).then((res) => {
+                navigation.navigate('Note', { id: res.note.id, tab: 'summary' });
+              }).catch((err) => Alert.alert('YouTube', explainError(err, 'That link could not be imported.')));
+            }}><Text style={styles.ytBtnText}>Import</Text></Pressable>
+            <Pressable onPress={() => setYtOpen(false)}><Text style={styles.toolText}>Cancel</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -159,6 +187,14 @@ const styles = StyleSheet.create({
   minsText: { fontFamily: fonts.bold, fontSize: 11.5, color: colors.accentDeep },
   search: { marginHorizontal: 20, marginBottom: 12, height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   searchInput: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.ink, padding: 0 },
+  tools: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 20, paddingBottom: 8 },
+  tool: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  toolText: { fontFamily: fonts.semibold, fontSize: 12, color: colors.accentDeep },
+  modal: { flex: 1, backgroundColor: 'rgba(22,17,38,0.35)', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: colors.white, borderRadius: 18, padding: 16, gap: 10 },
+  ytInput: { height: 46, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 12, fontFamily: fonts.medium, color: colors.ink },
+  ytBtn: { height: 46, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  ytBtnText: { color: '#fff', fontFamily: fonts.bold },
   chips: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingBottom: 12, flexWrap: 'wrap' },
   chip: { height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },

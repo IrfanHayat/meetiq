@@ -3,6 +3,7 @@ import express from 'express';
 import { connectDb } from './db';
 import { HttpError } from './http';
 import { startKeepAlive } from './keepalive';
+import { attachLiveStream } from './liveStream';
 import { registerRoutes } from './routes';
 
 const app = express();
@@ -12,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'meetiq-api' });
+  res.json({ ok: true, service: 'meetiq-api', version: '1.1.0' });
 });
 
 registerRoutes(app);
@@ -42,6 +43,7 @@ const server = app.listen(port, '0.0.0.0', () => {
   try {
     connectDb();
     startKeepAlive();
+    attachLiveStream(server);
   } catch (err) {
     console.error('Startup task failed:', err instanceof Error ? err.message : err);
   }

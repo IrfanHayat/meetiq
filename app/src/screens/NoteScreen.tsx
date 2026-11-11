@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatClock, formatDurationBadge, relativeDay } from '../format';
+import { CitedText, NoteExtra, shareNote } from '../components/NoteTools';
 import { api } from '../services/api';
 import { explainError } from '../services/feedback';
 import { useApp } from '../state/AppState';
@@ -27,6 +28,8 @@ export function NoteScreen({ navigation, route }: NativeStackScreenProps<RootSta
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [extra, setExtra] = useState<'speakers' | 'decisions' | 'map' | 'email' | null>(null);
+  const [focusSec, setFocusSec] = useState<number | null>(null);
   const soundRef = React.useRef<Audio.Sound | null>(null);
 
   const load = async () => {
@@ -198,7 +201,9 @@ export function NoteScreen({ navigation, route }: NativeStackScreenProps<RootSta
             </Pressable>
           ))}
         </View>
-        {loading ? (
+        {extra && note ? (
+          <NoteExtra note={note} mode={extra} onBack={() => setExtra(null)} onNote={setNote} onTime={(seconds) => { setExtra(null); setTab('transcript'); setFocusSec(seconds); }} />
+        ) : loading ? (
           <ActivityIndicator style={{ marginTop: 30 }} color={colors.accent} />
         ) : error ? (
           <View style={styles.errorBox}>
@@ -236,10 +241,10 @@ export function NoteScreen({ navigation, route }: NativeStackScreenProps<RootSta
           <ScrollView contentContainerStyle={styles.summary}>
             <View style={styles.card}>
               {note.segments.length > 0 ? note.segments.map((segment, index) => (
-                <View key={`${segment.start}-${index}`} style={styles.line}>
+                <Pressable key={`${segment.start}-${index}`} style={[styles.line, focusSec !== null && segment.start <= focusSec && segment.end >= focusSec && { backgroundColor: '#F4F2FF' }]} onPress={() => setFocusSec(segment.start)}>
                   <Text style={styles.ts}>{formatClock(segment.start)}</Text>
-                  <Text style={styles.lineText}>{segment.text}</Text>
-                </View>
+                  <Text style={styles.lineText}>{segment.speaker ? `${note.speakerNames?.[segment.speaker] || `Speaker ${Number(segment.speaker) + 1}`}: ` : ''}{segment.text}</Text>
+                </Pressable>
               )) : <Text style={styles.lineText}>{note.transcript || 'No transcript yet.'}</Text>}
             </View>
           </ScrollView>
@@ -253,7 +258,7 @@ export function NoteScreen({ navigation, route }: NativeStackScreenProps<RootSta
               {note.messages.map((message, index) => (
                 <View key={`${message.createdAt}-${index}`} style={[styles.bubble, message.role === 'user' ? styles.bubbleUser : styles.bubbleAi]}>
                   {message.role === 'assistant' ? <Text style={styles.who}>MEETIQ</Text> : null}
-                  <Text style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}>{message.content}</Text>
+                  <CitedText text={message.content} light={message.role === 'user'} onTime={(seconds) => { setExtra(null); setTab('transcript'); setFocusSec(seconds); }} />
                 </View>
               ))}
               <View style={styles.sugs}>
@@ -283,6 +288,13 @@ export function NoteScreen({ navigation, route }: NativeStackScreenProps<RootSta
       <Modal visible={menu} transparent animationType="fade" onRequestClose={() => setMenu(false)}>
         <Pressable style={styles.modalBg} onPress={() => setMenu(false)}>
           <View style={styles.sheet}>
+            <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); if (note) void shareNote(note); }}>
+              <Text style={styles.sheetText}>Share transcript</Text>
+            </Pressable>
+            <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); setExtra('speakers'); }}><Text style={styles.sheetText}>Speakers</Text></Pressable>
+            <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); setExtra('decisions'); }}><Text style={styles.sheetText}>Decisions</Text></Pressable>
+            <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); setExtra('map'); }}><Text style={styles.sheetText}>Mind map</Text></Pressable>
+            <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); setExtra('email'); }}><Text style={styles.sheetText}>Follow-up email</Text></Pressable>
             <Pressable style={styles.sheetRow} onPress={() => { setMenu(false); setTitleDraft(note?.title || ''); setRename(true); }}>
               <Text style={styles.sheetText}>Rename</Text>
             </Pressable>

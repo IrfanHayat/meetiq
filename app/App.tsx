@@ -16,6 +16,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { WaveMark } from './src/components/Logo';
 import { TaskOverlay } from './src/components/Ui';
 import { FoldersScreen } from './src/screens/FoldersScreen';
+import { DecisionsScreen, GeneralChatScreen, InsightsScreen, MemoryScreen } from './src/screens/StudioScreens';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { HelpScreen, LanguageScreen, PrivacyScreen } from './src/screens/InfoScreens';
 import { NoteScreen } from './src/screens/NoteScreen';
@@ -90,6 +91,10 @@ function Root() {
         <Stack.Screen name="Language" component={LanguageScreen} />
         <Stack.Screen name="Privacy" component={PrivacyScreen} />
         <Stack.Screen name="Help" component={HelpScreen} />
+        <Stack.Screen name="GeneralChat" component={GeneralChatScreen} />
+        <Stack.Screen name="Memory" component={MemoryScreen} />
+        <Stack.Screen name="Insights" component={InsightsScreen} />
+        <Stack.Screen name="Decisions" component={DecisionsScreen} />
       </Stack.Navigator>
       <TaskOverlay label={task} />
     </NavigationContainer>

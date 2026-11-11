@@ -10,7 +10,7 @@ export function explainError(err: unknown, fallback: string): string {
 export function alertForTranscribeError(err: unknown, onUpgrade: () => void, onReward: () => void): void {
   const message = explainError(err, 'Transcription didn’t finish. Please try again.');
   const code = err instanceof ApiError ? err.code : undefined;
-  if (code === 'QUOTA' || code === 'IMPORT_LIMIT') {
+  if (code === 'QUOTA' || code === 'IMPORT_LIMIT' || code === 'DAILY_LIMIT') {
     Alert.alert(code === 'IMPORT_LIMIT' ? 'Import limit' : 'Out of minutes', message, [
       { text: 'Not now', style: 'cancel' },
       { text: 'Watch ad', onPress: onReward },

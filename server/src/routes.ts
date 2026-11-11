@@ -4,9 +4,12 @@ import multer from 'multer';
 import mongoose from 'mongoose';
 import { dbReady } from './db';
 import { clampText, HttpError } from './http';
-import { answerFromTranscript, normalizeLanguage, summarizeTranscript, transcribeAudio } from './groq';
-import { DEFAULT_FOLDERS, Folder, FolderDoc, Note, NoteDoc, User, UserDoc } from './models';
-import { assertCanSpend, chargeMinutes, FREE_IMPORT_LIMIT, presentUser, REWARD_MINUTES, refreshUsageWindow, usageSnapshot } from './usage';
+import { speakerStats } from './aiExtras';
+import { registerFeatureRoutes } from './featureRoutes';
+import { answerFromTranscript, normalizeLanguage, summarizeTranscript } from './groq';
+import { DEFAULT_FOLDERS, Folder, FolderDoc, Note, NoteDoc, Segment, User, UserDoc } from './models';
+import { transcribeBest } from './speech';
+import { assertCanSpend, assertDaily, chargeMinutes, FREE_IMPORT_LIMIT, presentUser, REWARD_MINUTES, refreshUsageWindow, usageSnapshot } from './usage';
 
 interface AuthedRequest extends Request {
   user: UserDoc;
@@ -112,13 +115,20 @@ function presentNote(note: NoteDoc, detail = false) {
     updatedAt: note.updatedAt,
   };
   if (!detail) return base;
+  const names = (note.speakerNames || {}) as Record<string, string>;
+  const segments = (note.segments || []) as Segment[];
   return {
     ...base,
     transcript: note.transcript || '',
-    segments: note.segments || [],
+    segments,
     summary: note.summary || '',
     keyPoints: note.keyPoints || [],
     actionItems: note.actionItems || [],
+    decisions: note.decisions || [],
+    speakerNames: names,
+    speakers: speakerStats(segments, names),
+    mindMap: note.mindMap || null,
+    youtubeUrl: note.youtubeUrl || '',
     messages: (note.messages || []).map((message) => ({
       role: message.role,
       content: message.content,
@@ -162,6 +172,8 @@ function applyEntitlement(user: UserDoc, isPremium: boolean, expiresAt: Date | n
 }
 
 export function registerRoutes(app: Express): void {
+  registerFeatureRoutes(app, { requireUser, upload, asyncRoute, presentNote, validId });
+
   app.post(
     '/api/auth/device',
     asyncRoute(async (req, res) => {
@@ -355,7 +367,7 @@ export function registerRoutes(app: Express): void {
 
       const language = normalizeLanguage(req.body?.language || user.language || 'en');
       const filename = (file.originalname || 'audio.m4a').replace(/[^\w.\-]+/g, '_') || 'audio.m4a';
-      const transcript = await transcribeAudio(file.buffer, filename, file.mimetype || 'audio/mp4', language);
+      const transcript = await transcribeBest(file.buffer, filename, file.mimetype || 'audio/mp4', language);
       if (!transcript.text) {
         throw new HttpError(422, 'We couldn’t detect speech in that audio. Try again a little closer to the mic.', 'NO_SPEECH');
       }
@@ -374,10 +386,12 @@ export function registerRoutes(app: Express): void {
         summary: summary.summary,
         keyPoints: summary.keyPoints,
         actionItems: summary.actionItems,
+        decisions: summary.decisions,
         messages: [],
         durationSeconds: durationSeconds || 0,
         language: transcript.language || language,
         source,
+        speakerNames: {},
       });
 
       chargeMinutes(user, durationSeconds || 1);
@@ -471,8 +485,17 @@ export function registerRoutes(app: Express): void {
       if (!message) throw new HttpError(400, 'Type a question about this note.', 'MESSAGE');
       if (!note.transcript) throw new HttpError(409, 'This note has no transcript to chat with yet.', 'NO_TRANSCRIPT');
 
+      assertDaily(user, 'chatCount');
       const history = (note.messages || []).map((item) => ({ role: item.role, content: item.content }));
-      const answer = await answerFromTranscript(note.transcript, note.title, history, message);
+      const answer = await answerFromTranscript(
+        note.transcript,
+        note.title,
+        history,
+        message,
+        note.segments || [],
+        (note.speakerNames || {}) as Record<string, string>,
+      );
+      await user.save();
       const now = new Date();
       note.messages.push({ role: 'user', content: message, createdAt: now });
       note.messages.push({ role: 'assistant', content: answer, createdAt: new Date() });

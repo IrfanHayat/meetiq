@@ -8,16 +8,17 @@ import { StatusBar } from 'expo-status-bar';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatClock } from '../format';
+import { api } from '../services/api';
 import { showInterstitialIfAllowed } from '../services/ads';
 import { alertForTranscribeError } from '../services/feedback';
 import { useApp } from '../state/AppState';
 import { colors, fonts, languageLabel } from '../theme';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, Segment } from '../types';
 
 const BASE_WAVE = [18, 28, 42, 22, 54, 36, 62, 24, 48, 70, 40, 22, 58, 34, 16, 44, 66, 30, 50, 20, 38, 60, 26, 48, 18, 32, 56, 24];
 
 export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Record'>) {
-  const { folders, user, transcribe, unlockWithAd } = useApp();
+  const { folders, user, transcribe, unlockWithAd, applyUser, upsertNote } = useApp();
   const [folderId, setFolderId] = useState<string | null>(route.params?.folderId ?? null);
   const [millis, setMillis] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -27,8 +28,14 @@ export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootS
   const [picker, setPicker] = useState(false);
   const [marks, setMarks] = useState<number[]>([]);
   const [savedUri, setSavedUri] = useState<string | null>(null);
+  const [liveLines, setLiveLines] = useState<Segment[]>([]);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const stopping = useRef(false);
+  const linesRef = useRef<Segment[]>([]);
+  const baseRef = useRef(0);
+  const rotateLock = useRef(false);
+  const languageRef = useRef(user?.language || 'en');
+  languageRef.current = user?.language || 'en';
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +59,7 @@ export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootS
         recording.setProgressUpdateInterval(120);
         recording.setOnRecordingStatusUpdate((status) => {
           if (!status.canRecord && !status.isRecording) return;
-          setMillis(status.durationMillis || 0);
+          setMillis(baseRef.current * 1000 + (status.durationMillis || 0));
           setPaused(Boolean(status.isRecording === false && (status.durationMillis || 0) > 0));
           if (typeof status.metering === 'number') {
             const height = Math.max(10, Math.min(72, (status.metering + 50) * 1.4));
@@ -97,6 +104,60 @@ export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootS
         recording.stopAndUnloadAsync().catch(() => undefined);
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void (async () => {
+        if (stopping.current || rotateLock.current || !recordingRef.current) return;
+        rotateLock.current = true;
+        const recording = recordingRef.current;
+        try {
+          const status = await recording.getStatusAsync();
+          const chunkSec = status.durationMillis ? status.durationMillis / 1000 : 0;
+          if (chunkSec < 2) {
+            rotateLock.current = false;
+            return;
+          }
+          await recording.stopAndUnloadAsync();
+          recordingRef.current = null;
+          const uri = recording.getURI();
+          const offset = baseRef.current;
+          baseRef.current += chunkSec;
+          const next = new Audio.Recording();
+          next.setProgressUpdateInterval(120);
+          next.setOnRecordingStatusUpdate((nextStatus) => {
+            if (!nextStatus.canRecord && !nextStatus.isRecording) return;
+            setMillis(baseRef.current * 1000 + (nextStatus.durationMillis || 0));
+          });
+          await next.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+          await next.startAsync();
+          recordingRef.current = next;
+          if (uri) {
+            const result = await api.liveChunk({ uri, offsetSeconds: offset, language: languageRef.current });
+            if (result.segments?.length) {
+              linesRef.current = [...linesRef.current, ...result.segments].slice(-50);
+              setLiveLines(linesRef.current);
+            }
+          }
+        } catch (err) {
+          console.warn('Live chunk skipped', err);
+          if (!recordingRef.current) {
+            try {
+              const next = new Audio.Recording();
+              await next.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+              await next.startAsync();
+              recordingRef.current = next;
+            } catch {
+              setError('Live transcription paused. Stop to save what was captured.');
+            }
+          }
+        } finally {
+          rotateLock.current = false;
+        }
+      })();
+    }, 7000);
+    return () => clearInterval(timer);
   }, []);
 
   const folderName = folders.find((folder) => folder.id === folderId)?.name || 'Unfiled';
@@ -157,6 +218,29 @@ export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootS
         if (!uri) throw new Error('The recording file is missing.');
         setSavedUri(uri);
       }
+      if (uri && !savedUri) {
+        try {
+          const result = await api.liveChunk({ uri, offsetSeconds: baseRef.current, language: user?.language || 'en' });
+          if (result.segments?.length) linesRef.current = [...linesRef.current, ...result.segments];
+          baseRef.current += result.durationSeconds || 0;
+        } catch {
+          // The full-file path below still saves the recording.
+        }
+      }
+      if (linesRef.current.length) {
+        const live = await api.finishLive({
+          segments: linesRef.current,
+          durationSeconds: Math.max(1, baseRef.current || millis / 1000),
+          folderId,
+          language: user?.language || 'en',
+        });
+        applyUser(live.user);
+        upsertNote(live.note);
+        await showInterstitialIfAllowed(Boolean(user?.isPremium));
+        navigation.replace('Note', { id: live.note.id, tab: 'summary' });
+        return;
+      }
+      if (!uri) throw new Error('The recording file is missing.');
       const note = await transcribe({
         uri,
         name: 'recording.m4a',
@@ -216,7 +300,11 @@ export function RecordScreen({ navigation, route }: NativeStackScreenProps<RootS
         </View>
         <View style={styles.transcript}>
           <Text style={styles.transcriptLabel}>Live transcript</Text>
-          {marks.length === 0 ? (
+          {liveLines.length ? liveLines.slice(-6).map((line, index) => (
+            <Text key={`${line.start}-${index}`} style={styles.transcriptBody}>
+              {formatClock(line.start)} {line.speaker !== undefined && line.speaker !== '' ? `Speaker ${Number(line.speaker) + 1}: ` : ''}{line.text}
+            </Text>
+          )) : marks.length === 0 ? (
             <Text style={styles.transcriptBody}>
               {savedUri
                 ? 'Recording saved on this phone. Tap the square button to try transcription again.'

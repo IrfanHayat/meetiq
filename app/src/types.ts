@@ -36,7 +36,7 @@ export interface NoteSummary {
   folderId: string | null;
   durationSeconds: number;
   language: string;
-  source: 'recording' | 'import';
+  source: 'recording' | 'import' | 'youtube' | 'live';
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +52,25 @@ export interface Segment {
   start: number;
   end: number;
   text: string;
+  speaker?: string;
+}
+
+export interface Decision {
+  text: string;
+  owner: string;
+  timestamp: string;
+}
+
+export interface SpeakerStat {
+  id: string;
+  name: string;
+  seconds: number;
+  percent: number;
+}
+
+export interface MindMap {
+  nodes: { id: string; label: string; kind: 'topic' | 'decision' | 'idea' }[];
+  edges: { from: string; to: string; label: string }[];
 }
 
 export interface ChatMessage {
@@ -66,6 +85,11 @@ export interface NoteDetail extends NoteSummary {
   summary: string;
   keyPoints: string[];
   actionItems: ActionItem[];
+  decisions: Decision[];
+  speakerNames: Record<string, string>;
+  speakers: { speakers: SpeakerStat[]; totalSeconds: number; timeline: Segment[] };
+  mindMap: MindMap | null;
+  youtubeUrl: string;
   messages: ChatMessage[];
 }
 
@@ -80,4 +104,8 @@ export type RootStackParamList = {
   Language: undefined;
   Privacy: undefined;
   Help: undefined;
+  GeneralChat: undefined;
+  Memory: undefined;
+  Insights: undefined;
+  Decisions: undefined;
 };

@@ -150,4 +150,41 @@ export const api = {
     if (input.title) form.append('title', input.title);
     return request<{ note: NoteDetail; user: User }>('/api/notes/transcribe', { method: 'POST', body: form }, 120000);
   },
+  liveChunk(input: { uri: string; offsetSeconds: number; language?: string }) {
+    const form = new FormData();
+    form.append('audio', { uri: input.uri, name: 'chunk.m4a', type: 'audio/mp4' } as unknown as Blob);
+    form.append('offsetSeconds', String(input.offsetSeconds));
+    if (input.language) form.append('language', input.language);
+    return request<{ text: string; segments: import('../types').Segment[]; durationSeconds: number; provider: 'deepgram' | 'groq' }>('/api/live/chunk', { method: 'POST', body: form }, 45000);
+  },
+  finishLive(body: { segments: import('../types').Segment[]; durationSeconds: number; folderId?: string | null; language?: string }) {
+    return request<{ note: NoteDetail; user: User }>('/api/notes/live', { method: 'POST', body: JSON.stringify(body) }, 60000);
+  },
+  youtube(url: string, folderId?: string | null) {
+    return request<{ note: NoteDetail; via: string }>('/api/notes/youtube', { method: 'POST', body: JSON.stringify({ url, folderId }) }, 90000);
+  },
+  renameSpeaker(id: string, speaker: string, name: string) {
+    return request<{ note: NoteDetail }>(`/api/notes/${id}/speakers`, { method: 'PATCH', body: JSON.stringify({ speaker, name }) });
+  },
+  email(id: string) {
+    return request<{ subject: string; body: string }>(`/api/notes/${id}/email`, { method: 'POST', body: '{}' }, 45000);
+  },
+  mindMap(id: string) {
+    return request<{ mindMap: import('../types').MindMap }>(`/api/notes/${id}/mindmap`, { method: 'POST', body: '{}' }, 45000);
+  },
+  decisions() {
+    return request<{ decisions: { noteId: string; title: string; createdAt: string; text: string; owner: string; timestamp: string }[] }>('/api/decisions');
+  },
+  insights() {
+    return request<{ repeatedTopics: string[]; unresolvedQuestions: string[]; pendingDecisions: string[]; frequentIssues: string[]; meetings: number }>('/api/insights', {}, 45000);
+  },
+  memory(question: string) {
+    return request<{ answer: string; meetings: { id: string; title: string; createdAt: string }[] }>('/api/memory', { method: 'POST', body: JSON.stringify({ question }) }, 45000);
+  },
+  generalHistory() {
+    return request<{ messages: { role: 'user' | 'assistant'; content: string; createdAt: string }[] }>('/api/chat');
+  },
+  generalChat(message: string) {
+    return request<{ reply: string; messages: { role: 'user' | 'assistant'; content: string; createdAt: string }[] }>('/api/chat', { method: 'POST', body: JSON.stringify({ message }) }, 45000);
+  },
 };

@@ -11,6 +11,30 @@ export interface Segment {
   start: number;
   end: number;
   text: string;
+  speaker?: string;
+}
+
+export interface Decision {
+  text: string;
+  owner: string;
+  timestamp: string;
+}
+
+export interface MindNode {
+  id: string;
+  label: string;
+  kind: 'topic' | 'decision' | 'idea';
+}
+
+export interface MindEdge {
+  from: string;
+  to: string;
+  label: string;
+}
+
+export interface MindMap {
+  nodes: MindNode[];
+  edges: MindEdge[];
 }
 
 export interface ChatMessage {
@@ -32,6 +56,15 @@ export interface IUser {
   bonusMinutes: number;
   importCount: number;
   rewardIds: string[];
+  usageDayKey: string;
+  chatCount: number;
+  generalCount: number;
+  youtubeCount: number;
+  liveCount: number;
+  memoryCount: number;
+  insightCount: number;
+  emailCount: number;
+  mindMapCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,9 +90,20 @@ export interface INote {
   messages: ChatMessage[];
   durationSeconds: number;
   language: string;
-  source: 'recording' | 'import';
+  source: 'recording' | 'import' | 'youtube' | 'live';
+  youtubeUrl: string;
+  speakerNames: Record<string, string>;
+  decisions: Decision[];
+  mindMap: MindMap | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface IGeneralMessage {
+  userId: Types.ObjectId;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: Date;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -76,6 +120,15 @@ const UserSchema = new Schema<IUser>(
     bonusMinutes: { type: Number, default: 0 },
     importCount: { type: Number, default: 0 },
     rewardIds: { type: [String], default: [] },
+    usageDayKey: { type: String, default: '' },
+    chatCount: { type: Number, default: 0 },
+    generalCount: { type: Number, default: 0 },
+    youtubeCount: { type: Number, default: 0 },
+    liveCount: { type: Number, default: 0 },
+    memoryCount: { type: Number, default: 0 },
+    insightCount: { type: Number, default: 0 },
+    emailCount: { type: Number, default: 0 },
+    mindMapCount: { type: Number, default: 0 },
   },
   { timestamps: true },
 );
@@ -103,6 +156,7 @@ const NoteSchema = new Schema<INote>(
             start: Number,
             end: Number,
             text: String,
+            speaker: { type: String, default: '' },
           },
           { _id: false },
         ),
@@ -140,10 +194,33 @@ const NoteSchema = new Schema<INote>(
     },
     durationSeconds: { type: Number, default: 0 },
     language: { type: String, default: 'en' },
-    source: { type: String, enum: ['recording', 'import'], default: 'recording' },
+    source: { type: String, enum: ['recording', 'import', 'youtube', 'live'], default: 'recording' },
+    youtubeUrl: { type: String, default: '' },
+    speakerNames: { type: Schema.Types.Mixed, default: {} },
+    decisions: {
+      type: [
+        new Schema<Decision>(
+          {
+            text: { type: String, default: '' },
+            owner: { type: String, default: '' },
+            timestamp: { type: String, default: '' },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    mindMap: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );
+
+const GeneralMessageSchema = new Schema<IGeneralMessage>({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  role: { type: String, enum: ['user', 'assistant'], required: true },
+  content: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
 
 NoteSchema.index({ userId: 1, createdAt: -1 });
 
@@ -154,6 +231,7 @@ export type NoteDoc = HydratedDocument<INote>;
 export const User = mongoose.model<IUser>('User', UserSchema);
 export const Folder = mongoose.model<IFolder>('Folder', FolderSchema);
 export const Note = mongoose.model<INote>('Note', NoteSchema);
+export const GeneralMessage = mongoose.model<IGeneralMessage>('GeneralMessage', GeneralMessageSchema);
 
 export const DEFAULT_FOLDERS: { name: string; color: string; icon: string }[] = [
   { name: 'Meetings', color: '#5B4DFF', icon: 'meetings' },
