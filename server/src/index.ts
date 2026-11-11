@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'meetiq-api', version: '1.1.0' });
+  res.json({ ok: true, service: 'meetiq-api', version: '1.1.1' });
 });
 
 registerRoutes(app);

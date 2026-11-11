@@ -50,7 +50,79 @@ export interface YoutubeTranscript {
   durationSeconds: number;
   segments: Segment[];
   text: string;
-  via: 'captions' | 'audio';
+  via: 'captions' | 'audio' | 'supadata';
+}
+
+export type SupadataFailure = 'skip' | 'quota' | 'no-captions' | 'error';
+
+export async function fetchSupadataTranscript(rawUrl: string, lang?: string): Promise<{ ok: true; transcript: YoutubeTranscript } | { ok: false; reason: SupadataFailure; message: string }> {
+  const key = process.env.SUPADATA_API_KEY?.trim();
+  const videoId = youtubeId(rawUrl);
+  if (!videoId) throw new HttpError(400, 'Paste a YouTube link or an 11-character video id.', 'YOUTUBE_URL');
+  if (!key) return { ok: false, reason: 'skip', message: '' };
+
+  const url = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://www.youtube.com/watch?v=${videoId}`;
+  const params = new URLSearchParams({ url });
+  if (lang && /^[a-z]{2,3}$/i.test(lang)) params.set('lang', lang.toLowerCase());
+
+  let res: Response;
+  try {
+    res = await fetch(`https://api.supadata.ai/v1/youtube/transcript?${params.toString()}`, {
+      headers: { 'x-api-key': key },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    return { ok: false, reason: 'error', message: 'Could not reach Supadata.' };
+  }
+
+  let body: { content?: unknown; lang?: string; error?: string; message?: string } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+
+  const code = `${body.error || ''} ${body.message || ''}`.toLowerCase();
+  if (res.status === 402 || res.status === 429 || /limit|quota|upgrade/.test(code)) {
+    return { ok: false, reason: 'quota', message: 'Supadata transcript quota is used up.' };
+  }
+  if (res.status === 404 || /transcript-unavailable|no captions|no transcript|video-unavailable/.test(code)) {
+    return { ok: false, reason: 'no-captions', message: 'This video has no captions.' };
+  }
+  if (!res.ok) {
+    return { ok: false, reason: 'error', message: body.message || `Supadata returned ${res.status}.` };
+  }
+
+  const content = body.content;
+  const segments: Segment[] = [];
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      const row = item as { text?: string; offset?: number; duration?: number; start?: number };
+      const text = decodeText(String(row.text || ''));
+      if (!text) continue;
+      const startMs = Number(row.offset ?? row.start ?? 0);
+      const durMs = Number(row.duration ?? 0);
+      const start = Math.max(0, startMs / 1000);
+      segments.push({ start, end: start + Math.max(0, durMs / 1000), text, speaker: '' });
+      if (segments.length >= 800) break;
+    }
+  }
+  const text = segments.map((segment) => segment.text).join(' ').trim()
+    || (typeof content === 'string' ? decodeText(content) : '');
+  if (!text) return { ok: false, reason: 'no-captions', message: 'This video has no captions.' };
+
+  const last = segments[segments.length - 1];
+  return {
+    ok: true,
+    transcript: {
+      videoId,
+      title: 'YouTube video',
+      durationSeconds: last ? last.end : 0,
+      segments,
+      text,
+      via: 'supadata',
+    },
+  };
 }
 
 export async function loadYoutube(url: string): Promise<{ videoId: string; title: string; durationSeconds: number; captions: YoutubeTranscript | null; audio: { url: string; mime: string } | null; blockedReason: string }> {

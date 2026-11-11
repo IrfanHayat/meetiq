@@ -8,7 +8,7 @@ import { summarizeTranscript } from './groq';
 import { GeneralMessage, Note, Segment, UserDoc } from './models';
 import { transcribeBest } from './speech';
 import { assertCanSpend, assertDaily, chargeMinutes } from './usage';
-import { downloadYoutubeAudio, loadYoutube } from './youtube';
+import { downloadYoutubeAudio, fetchSupadataTranscript, loadYoutube } from './youtube';
 
 type Authed = Request & { user: UserDoc };
 
@@ -124,39 +124,61 @@ export function registerFeatureRoutes(app: Express, deps: Deps): void {
   app.post('/api/notes/youtube', requireUser, asyncRoute(async (req, res) => {
     const user = (req as Authed).user;
     assertDaily(user, 'youtubeCount');
-    const loaded = await loadYoutube(clampText(req.body?.url, 300));
+    const rawUrl = clampText(req.body?.url, 300);
+    const supa = await fetchSupadataTranscript(rawUrl, user.language || undefined);
     let segments: Segment[] = [];
     let transcript = '';
-    let durationSeconds = loaded.durationSeconds;
-    let via: 'captions' | 'audio' | '' = '';
-    if (loaded.captions) {
-      segments = loaded.captions.segments;
-      transcript = loaded.captions.text;
-      durationSeconds = loaded.captions.durationSeconds || durationSeconds;
-      via = 'captions';
-    } else if (loaded.audio) {
-      const audio = await downloadYoutubeAudio(loaded.audio);
-      if (audio) {
-        const stt = await transcribeBest(audio, 'youtube.m4a', loaded.audio.mime || 'audio/mp4', user.language || 'en');
-        segments = stt.segments;
-        transcript = stt.text;
-        durationSeconds = stt.durationSeconds || durationSeconds;
-        via = 'audio';
-        chargeMinutes(user, durationSeconds || 1);
+    let durationSeconds = 0;
+    let via: 'captions' | 'audio' | 'supadata' | '' = '';
+    let title = 'YouTube video';
+    let videoId = '';
+    if (supa.ok) {
+      segments = supa.transcript.segments;
+      transcript = supa.transcript.text;
+      durationSeconds = supa.transcript.durationSeconds;
+      via = 'supadata';
+      title = supa.transcript.title;
+      videoId = supa.transcript.videoId;
+    } else {
+      const loaded = await loadYoutube(rawUrl);
+      videoId = loaded.videoId;
+      title = loaded.title;
+      durationSeconds = loaded.durationSeconds;
+      if (loaded.captions) {
+        segments = loaded.captions.segments;
+        transcript = loaded.captions.text;
+        durationSeconds = loaded.captions.durationSeconds || durationSeconds;
+        via = 'captions';
+      } else if (loaded.audio) {
+        const audio = await downloadYoutubeAudio(loaded.audio);
+        if (audio) {
+          const stt = await transcribeBest(audio, 'youtube.m4a', loaded.audio.mime || 'audio/mp4', user.language || 'en');
+          segments = stt.segments;
+          transcript = stt.text;
+          durationSeconds = stt.durationSeconds || durationSeconds;
+          via = 'audio';
+          chargeMinutes(user, durationSeconds || 1);
+        }
       }
-    }
-    if (!transcript) {
-      throw new HttpError(
-        422,
-        loaded.blockedReason || 'YouTube blocked this download from the server. Try another video, or import the audio file from your phone.',
-        'YOUTUBE_BLOCKED',
-      );
+      if (!transcript) {
+        if (supa.reason === 'quota') {
+          throw new HttpError(429, `Supadata transcript quota is used up. ${loaded.blockedReason || 'YouTube did not return a transcript either.'}`.trim(), 'YOUTUBE_QUOTA');
+        }
+        if (supa.reason === 'no-captions') {
+          throw new HttpError(422, loaded.blockedReason || 'This video has no captions.', 'YOUTUBE_NO_CAPTIONS');
+        }
+        throw new HttpError(
+          422,
+          loaded.blockedReason || 'YouTube blocked this download from the server. Try another video, or import the audio file from your phone.',
+          'YOUTUBE_BLOCKED',
+        );
+      }
     }
     const summary = await summarizeTranscript(transcript.slice(0, 24000), user.language || 'en');
     const note = await Note.create({
       userId: user._id,
       folderId: await folderFor(user._id, req.body?.folderId),
-      title: summary.title || loaded.title,
+      title: summary.title || title,
       transcript,
       segments,
       summary: summary.summary,
@@ -167,10 +189,10 @@ export function registerFeatureRoutes(app: Express, deps: Deps): void {
       durationSeconds: durationSeconds || 1,
       language: user.language || 'en',
       source: 'youtube',
-      youtubeUrl: `https://www.youtube.com/watch?v=${loaded.videoId}`,
+      youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
       speakerNames: {},
     });
-    if (via === 'captions') chargeMinutes(user, 0.25);
+    if (via === 'captions' || via === 'supadata') chargeMinutes(user, 0.25);
     await user.save();
     res.status(201).json({ note: presentNote(note, true), via });
   }));

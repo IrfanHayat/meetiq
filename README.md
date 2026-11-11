@@ -38,6 +38,7 @@ Set these on the web service. Do not commit real values.
 | `GROQ_API_KEY` | Yes, for transcription and chat | Groq key. If it is missing the API returns **503** instead of crashing |
 | `GROQ_CHAT_MODEL` | No | Defaults to `openai/gpt-oss-20b` |
 | `DEEPGRAM_API_KEY` | No | Live and imported audio use Deepgram nova-3 with diarization. If it is missing or Deepgram fails, Groq Whisper is used |
+| `SUPADATA_API_KEY` | No | YouTube import reads captions from Supadata first. If it is missing, out of quota, or the video has no captions, the previous YouTube path is used |
 | `REVENUECAT_WEBHOOK_SECRET` | No | If set, webhook calls must send `Authorization: Bearer <secret>` |
 | `RENDER_EXTERNAL_URL` | Set by Render | Used to ping `/health` every 10 minutes so the free instance stays awake |
 | `PORT` | Set by Render | Process listens on `0.0.0.0:$PORT` |
