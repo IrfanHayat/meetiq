@@ -15,6 +15,14 @@ export class ApiError extends Error {
   }
 }
 
+async function warmServer(): Promise<void> {
+  try {
+    await request('/health', {}, 90000);
+  } catch {
+    // The upload still runs. The long timeout covers a cold start.
+  }
+}
+
 function apiBase(): string {
   const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
   const url = extra?.apiUrl?.trim() || 'https://meetiq-api.onrender.com';
@@ -148,14 +156,15 @@ export const api = {
     if (input.language) form.append('language', input.language);
     if (input.durationSeconds) form.append('durationSeconds', String(Math.round(input.durationSeconds)));
     if (input.title) form.append('title', input.title);
-    return request<{ note: NoteDetail; user: User }>('/api/notes/transcribe', { method: 'POST', body: form }, 120000);
+    await warmServer();
+    return request<{ note: NoteDetail; user: User }>('/api/notes/transcribe', { method: 'POST', body: form }, 180000);
   },
   liveChunk(input: { uri: string; offsetSeconds: number; language?: string }) {
     const form = new FormData();
     form.append('audio', { uri: input.uri, name: 'chunk.m4a', type: 'audio/mp4' } as unknown as Blob);
     form.append('offsetSeconds', String(input.offsetSeconds));
     if (input.language) form.append('language', input.language);
-    return request<{ text: string; segments: import('../types').Segment[]; durationSeconds: number; provider: 'deepgram' | 'groq' }>('/api/live/chunk', { method: 'POST', body: form }, 45000);
+    return request<{ text: string; segments: import('../types').Segment[]; durationSeconds: number; provider: 'deepgram' | 'groq' }>('/api/live/chunk', { method: 'POST', body: form }, 120000);
   },
   finishLive(body: { segments: import('../types').Segment[]; durationSeconds: number; folderId?: string | null; language?: string }) {
     return request<{ note: NoteDetail; user: User }>('/api/notes/live', { method: 'POST', body: JSON.stringify(body) }, 60000);

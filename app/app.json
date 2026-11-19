@@ -3,7 +3,7 @@
     "name": "MeetIQ",
     "slug": "meetiq",
     "scheme": "meetiq",
-    "version": "1.1.2",
+    "version": "1.1.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.meetiq.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -29,6 +29,12 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "MeetIQ needs the microphone to record voice notes."
+        }
+      ],
       [
         "expo-build-properties",
         {
